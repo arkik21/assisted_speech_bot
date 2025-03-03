@@ -1,0 +1,44 @@
+# YouTube source configuration
+
+# Default YouTube URL to monitor
+default_url: "https://www.youtube.com/watch?v=ZJR8YzV-Wgc"
+
+# List of YouTube channels to monitor
+channels:
+  - name: "Donald Trump"
+    id: "UCqbEi-V7K54F-rA1OFf1jUQ"
+    active: true
+    markets:
+      - crypto_market
+      - mcdonalds_market
+      - doge_market
+      - greenland_market
+  
+  - name: "White House"
+    id: "UCYxRlFDqcWM4y7FfpiAN3KQ"
+    active: false
+    markets:
+      - sleepy_joe_market
+      - crooked_joe_market
+
+# yt-dlp options
+ytdlp_options:
+  format: "bestaudio"
+  quiet: true
+  no_warnings: true
+  socket_timeout: 30
+
+# Audio processing options
+audio:
+  codec: "pcm_s16le"
+  sample_rate: 16000
+  channels: 1
+  
+# Polling interval for checking new streams (in seconds)
+poll_interval: 300
+
+# Auto-reconnect settings
+reconnect:
+  enabled: true
+  max_attempts: 5
+  delay: 10  # seconds between attempts

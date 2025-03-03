@@ -1,0 +1,96 @@
+# Market definitions for Polymarket trading
+
+# Crypto/Bitcoin market
+crypto_market:
+  name: "Crypto/Bitcoin Mention"
+  token_id: "3660410095428561092102519777003195517288237825451410551527242610276838889743"
+  keywords: 
+    - "crypto"
+    - "bitcoin"
+    - "cryptocurrency"
+  trigger_type: "any"  # 'any' or 'exact'
+  side: "BUY"
+  price: 0.9
+  size: 432
+  max_position: 1000  # Maximum position size
+  description: "Will Trump say crypto or Bitcoin during inauguration speech?"
+
+# McDonald's market
+mcdonalds_market:
+  name: "McDonald's Mention"
+  token_id: "50356502236095665350267124222963007489686801360851223017206557156317194382898"
+  keywords:
+    - "mcdonalds"
+  trigger_type: "exact"
+  side: "BUY"
+  price: 0.5
+  size: 775
+  max_position: 1500
+  description: "Will Trump say McDonald's during inauguration speech?"
+
+# Sleepy Joe market
+sleepy_joe_market:
+  name: "Sleepy Joe Mention"
+  token_id: "4653101539264023968524739404348782737292724275999790265379600839231750780090"
+  keywords:
+    - "sleepy joe"
+  trigger_type: "exact"
+  side: "BUY"
+  price: 0.3
+  size: 1300
+  max_position: 2000
+  description: "Will Trump say Sleepy Joe during inauguration speech?"
+
+# Crooked Joe market
+crooked_joe_market:
+  name: "Crooked Joe Mention"
+  token_id: "81099742287114274271431275759337167201136362024111061408972055849730762251498"
+  keywords:
+    - "crooked joe"
+  trigger_type: "exact"
+  side: "BUY"
+  price: 0.3
+  size: 1300
+  max_position: 2000
+  description: "Will Trump say Crooked Joe during inauguration speech?"
+
+# Doge/Dogecoin market
+doge_market:
+  name: "Dogecoin Mention"
+  token_id: "99924137919019374354779168014821345320750518782626001937091372900606097051185"
+  keywords:
+    - "dogecoin"
+    - "doge"
+    - "doge coin"
+  trigger_type: "any"
+  side: "BUY"
+  price: 0.5
+  size: 780
+  max_position: 1500
+  description: "Will Trump say Doge or Dogecoin during inauguration speech?"
+
+# Greenland market
+greenland_market:
+  name: "Greenland Mention"
+  token_id: "34510344541365974726107691584398341159796505768592867142296638107609795066241"
+  keywords:
+    - "greenland"
+  trigger_type: "exact"
+  side: "BUY"
+  price: 0.8
+  size: 487
+  max_position: 1000
+  description: "Will Trump say Greenland during inauguration speech?"
+
+# Drill Baby Drill market
+drill_baby_drill_market:
+  name: "Drill Baby Drill Mention"
+  token_id: "114025614801185921971405922012344009013796396174688027492878973701931375633661"
+  keywords:
+    - "drill baby drill"
+  trigger_type: "exact"
+  side: "BUY"
+  price: 0.9
+  size: 420
+  max_position: 1000
+  description: "Will Trump say Drill Baby Drill during inauguration speech?"

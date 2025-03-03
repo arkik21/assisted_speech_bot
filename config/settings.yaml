@@ -1,0 +1,61 @@
+# Global application settings
+
+# Trading settings
+trading:
+  # Prevent executing the same market multiple times
+  prevent_duplicate_trades: true
+  
+  # Maximum daily trading volume (in USD)
+  max_daily_volume: 5000
+  
+  # Default slippage tolerance (percent)
+  default_slippage_tolerance: 5
+  
+  # Confirmation settings
+  require_confirmation: false
+  
+  # Maximum timeout for order submission (seconds)
+  order_timeout: 10
+
+# Speech recognition settings
+speech:
+  # Chunk size in seconds
+  chunk_size: 1
+  
+  # Whether to save detected audio snippets
+  save_detections: true
+  
+  # Audio sample rate
+  sample_rate: 16000
+  
+  # Minimum confidence required for keyword detection (0-1)
+  min_confidence: 0.7
+  
+  # Vosk model to use
+  model_name: "vosk-model-small-en-us-0.15"
+  
+  # Whether to use exact matching for all keywords
+  exact_matching: false
+
+# Directory paths
+paths:
+  logs: "logs"
+  trades: "trades"
+  detections: "detections"
+  models: "models"
+
+# Application behavior
+app:
+  # Whether to run in debug mode
+  debug: false
+  
+  # Auto restart on failure
+  auto_restart: true
+  
+  # Notification settings
+  notifications: 
+    enabled: false
+    email: ""
+    
+  # Whether to record all speech transcripts
+  record_all_transcripts: false

@@ -13,11 +13,21 @@ import logging
 from logging.handlers import RotatingFileHandler
 import traceback
 import backoff
+import argparse
+import sys
 
-# Create logs directory if it doesn't exist
-os.makedirs('logs', exist_ok=True)
-os.makedirs('trades', exist_ok=True)
-os.makedirs('detections', exist_ok=True)
+# Add the src directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+# Import configuration loader
+from utils.config_loader import get_config
+
+# Get configuration
+config = get_config()
+
+# Create directory paths from configuration
+for path_name, path in config.settings.get('paths', {}).items():
+    os.makedirs(path, exist_ok=True)
 
 # Configure logging
 def setup_logger(name, log_file, level=logging.INFO):
@@ -40,13 +50,21 @@ def setup_logger(name, log_file, level=logging.INFO):
     
     return logger
 
-# Set up loggers
-main_logger = setup_logger('main', 'logs/main.log')
-trade_logger = setup_logger('trade', 'logs/trades.log')
-speech_logger = setup_logger('speech', 'logs/speech.log')
+# Get log paths from configuration
+logs_dir = config.get_setting('paths', 'logs', 'logs')
+main_logger = setup_logger('main', os.path.join(logs_dir, 'main.log'))
+trade_logger = setup_logger('trade', os.path.join(logs_dir, 'trades.log'))
+speech_logger = setup_logger('speech', os.path.join(logs_dir, 'speech.log'))
+
+# Set debug mode from configuration
+if config.get_setting('app', 'debug', False):
+    main_logger.setLevel(logging.DEBUG)
+    trade_logger.setLevel(logging.DEBUG)
+    speech_logger.setLevel(logging.DEBUG)
+    main_logger.debug("Debug mode enabled")
 
 class MultiMarketTrader:
-    def __init__(self, youtube_url):
+    def __init__(self, youtube_url=None):
         self.trading_client = None
         self.initialize_trading_client()
         
@@ -54,62 +72,24 @@ class MultiMarketTrader:
         self.rec = None
         self.initialize_speech_recognition()
         
-        self.youtube_url = youtube_url
+        # Get YouTube URL from arguments or configuration
+        youtube_config = config.get_source_config('youtube')
+        self.youtube_url = youtube_url or youtube_config.get('default_url')
+        if not self.youtube_url:
+            raise ValueError("YouTube URL not provided and not found in configuration")
+            
+        main_logger.info(f"Using YouTube URL: {self.youtube_url}")
+        
+        # Audio processing
         self.audio_queue = queue.Queue(maxsize=10)
         self.executed_markets = set()
         self.detection_history = []
         
-        # Market configurations
-        self.markets = {
-           'crypto_market': {
-               'token_id': '3660410095428561092102519777003195517288237825451410551527242610276838889743',
-               'keywords': ['crypto', 'bitcoin', 'cryptocurrency'],
-               'trigger_type': 'any',
-               'side': 'BUY',
-               'price': 0.9,
-               'size': 432  # $388.80 total cost
-           },
-            'mcdonalds_market': {
-                'token_id': '50356502236095665350267124222963007489686801360851223017206557156317194382898',
-                'keywords': ['mcdonalds'],
-                'trigger_type': 'exact',
-                'side': 'BUY',
-                'price': 0.5,
-                'size': 775  # $387.50 total cost at $0.50 per share
-            },
-           'sleepy_joe_market': {
-               'token_id': '4653101539264023968524739404348782737292724275999790265379600839231750780090',
-               'keywords': ['sleepy joe'],
-               'trigger_type': 'exact',
-               'side': 'BUY',
-               'price': 0.3,
-               'size': 1300  # $390 total cost
-           },         
-           'crooked_joe_market': {
-               'token_id': '81099742287114274271431275759337167201136362024111061408972055849730762251498',
-               'keywords': ['crooked joe'],
-               'trigger_type': 'exact',
-               'side': 'BUY',
-               'price': 0.3,
-               'size': 1300  # $390 total cost
-           },
-           'doge_market': {
-               'token_id': '99924137919019374354779168014821345320750518782626001937091372900606097051185',
-               'keywords': ['dogecoin', 'doge', 'doge coin'],
-               'trigger_type': 'any',
-               'side': 'BUY',
-               'price': 0.5,
-               'size': 780  # $390 total cost
-           },
-           'greenland_market': {
-               'token_id': '34510344541365974726107691584398341159796505768592867142296638107609795066241',
-               'keywords': ['greenland'],
-               'trigger_type': 'exact',
-               'side': 'BUY',
-               'price': 0.8,
-               'size': 487  # $389.60 total cost
-           },
-       }
+        # Load markets from configuration
+        self.markets = {}
+        for market_id, market_data in config.get_enabled_markets().items():
+            self.markets[market_id] = market_data
+            main_logger.info(f"Loaded market: {market_id} - {market_data.get('name')}")
 
     def initialize_trading_client(self):
         """Initialize trading client with retries"""
@@ -126,14 +106,14 @@ class MultiMarketTrader:
         """Initialize speech recognition with error handling"""
         try:
             main_logger.info("Loading Vosk model")
-            model_name = "vosk-model-small-en-us-0.15"
+            model_name = config.get_setting('speech', 'model_name', "vosk-model-small-en-us-0.15")
             
             if not os.path.exists(model_name):
                 main_logger.warning(f"Model directory {model_name} not found. Please ensure it's downloaded")
                 main_logger.info("You can download it from: https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip")
             
             self.model = Model(model_name)
-            self.rec = KaldiRecognizer(self.model, 16000)
+            self.rec = KaldiRecognizer(self.model, config.get_setting('speech', 'sample_rate', 16000))
             main_logger.info("Speech recognition model loaded successfully")
         except Exception as e:
             main_logger.error(f"Failed to initialize speech recognition: {str(e)}")
@@ -168,18 +148,26 @@ class MultiMarketTrader:
             trade_logger.error(traceback.format_exc())
             raise
 
-    def place_trade(self, market_name, market_config, detected_keyword, detection_time):
+    def place_trade(self, market_id, market_config, detected_keyword, detection_time):
         """Place a trade with comprehensive logging"""
         try:
             trade_info = {
                 "timestamp": datetime.now().isoformat(),
-                "market_name": market_name,
+                "market_id": market_id,
+                "market_name": market_config.get('name', market_id),
                 "detected_keyword": detected_keyword,
                 "detection_latency": time.time() - detection_time,
                 "status": "pending"
             }
             
-            trade_logger.info(f"Executing trade for {market_name} triggered by '{detected_keyword}'")
+            trade_logger.info(f"Executing trade for {market_id} triggered by '{detected_keyword}'")
+            
+            # Check if we've already executed this market
+            if config.get_setting('trading', 'prevent_duplicate_trades', True) and market_id in self.executed_markets:
+                trade_logger.warning(f"Skipping trade for {market_id} - already executed")
+                trade_info["status"] = "skipped"
+                trade_info["reason"] = "already_executed"
+                return
             
             resp = self.create_and_submit_order(
                 token_id=market_config['token_id'],
@@ -189,30 +177,32 @@ class MultiMarketTrader:
             )
             
             if resp:
-                self.executed_markets.add(market_name)
+                self.executed_markets.add(market_id)
                 latency = time.time() - detection_time
                 
                 trade_info["status"] = "success"
                 trade_info["order_response"] = resp
                 trade_info["execution_latency"] = latency
                 
-                trade_logger.info(f"Trade executed - {market_name} - Latency: {latency:.3f}s")
+                trade_logger.info(f"Trade executed - {market_id} - Latency: {latency:.3f}s")
                 trade_logger.info(f"Response: {resp}")
                 
                 # Save trade to file
-                with open(f"trades/{market_name}_{int(time.time())}.json", 'w') as f:
+                trades_dir = config.get_setting('paths', 'trades', 'trades')
+                with open(f"{trades_dir}/{market_id}_{int(time.time())}.json", 'w') as f:
                     json.dump(trade_info, f, indent=2)
             else:
                 trade_info["status"] = "failed"
-                trade_logger.error(f"Trade failed - {market_name}: No response from server")
+                trade_logger.error(f"Trade failed - {market_id}: No response from server")
         except Exception as e:
             trade_info["status"] = "error"
             trade_info["error"] = str(e)
-            trade_logger.error(f"Trade failed - {market_name}: {str(e)}")
+            trade_logger.error(f"Trade failed - {market_id}: {str(e)}")
             trade_logger.error(traceback.format_exc())
             
             # Save trade error to file
-            with open(f"trades/{market_name}_error_{int(time.time())}.json", 'w') as f:
+            trades_dir = config.get_setting('paths', 'trades', 'trades')
+            with open(f"{trades_dir}/{market_id}_error_{int(time.time())}.json", 'w') as f:
                 json.dump(trade_info, f, indent=2)
 
     def get_audio_stream(self):
@@ -220,16 +210,27 @@ class MultiMarketTrader:
         try:
             main_logger.info(f"Getting audio stream for YouTube URL: {self.youtube_url}")
             
-            with yt_dlp.YoutubeDL({'format': 'bestaudio', 'quiet': True}) as ydl:
+            # Get yt-dlp options from configuration
+            youtube_config = config.get_source_config('youtube')
+            ytdlp_options = youtube_config.get('ytdlp_options', {'format': 'bestaudio', 'quiet': True})
+            
+            with yt_dlp.YoutubeDL(ytdlp_options) as ydl:
                 main_logger.info("Extracting info with yt-dlp")
                 info = ydl.extract_info(self.youtube_url, download=False)
                 audio_url = info['url']
                 main_logger.info("Successfully extracted audio URL")
             
+            # Get audio processing options from configuration
+            audio_config = youtube_config.get('audio', {})
+            codec = audio_config.get('codec', 'pcm_s16le')
+            sample_rate = audio_config.get('sample_rate', 16000)
+            channels = audio_config.get('channels', 1)
+            
             main_logger.info("Starting FFmpeg process")
             process = subprocess.Popen([
                 'ffmpeg', '-i', audio_url,
-                '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', '-f', 'wav', '-'
+                '-acodec', codec, '-ar', str(sample_rate), 
+                '-ac', str(channels), '-f', 'wav', '-'
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
             main_logger.info("FFmpeg process started successfully")
@@ -256,21 +257,36 @@ class MultiMarketTrader:
                         timestamp = datetime.now().strftime('%H:%M:%S')
                         speech_logger.info(f"[{timestamp}] \"{text}\"")
                         
-                        for market_name, market_config in self.markets.items():
-                            if market_name in self.executed_markets:
+                        # Record all transcripts if configured
+                        if config.get_setting('app', 'record_all_transcripts', False):
+                            transcript_dir = os.path.join(config.get_setting('paths', 'logs', 'logs'), 'transcripts')
+                            os.makedirs(transcript_dir, exist_ok=True)
+                            with open(f"{transcript_dir}/transcript_{int(time.time())}.txt", 'w') as f:
+                                f.write(f"{timestamp}: {text}")
+                        
+                        for market_id, market_config in self.markets.items():
+                            if market_id in self.executed_markets and config.get_setting('trading', 'prevent_duplicate_trades', True):
                                 continue
                                 
                             detected = False
                             detected_keyword = None
                             
-                            if market_config['trigger_type'] == 'exact':
+                            # Get keywords and trigger type from configuration
+                            keywords = market_config.get('keywords', [])
+                            trigger_type = market_config.get('trigger_type', 'any')
+                            
+                            # Override trigger type if configured globally
+                            if config.get_setting('speech', 'exact_matching', False):
+                                trigger_type = 'exact'
+                            
+                            if trigger_type == 'exact':
                                 # Check if any keyword exactly matches the text
-                                if text in market_config['keywords']:
+                                if text in keywords:
                                     detected = True
                                     detected_keyword = text
-                            elif market_config['trigger_type'] == 'any':
+                            elif trigger_type == 'any':
                                 # Check if any keyword is contained in the text
-                                for kw in market_config['keywords']:
+                                for kw in keywords:
                                     if kw in text:
                                         detected = True
                                         detected_keyword = kw
@@ -279,20 +295,25 @@ class MultiMarketTrader:
                             if detected:
                                 detection_info = {
                                     "timestamp": datetime.now().isoformat(),
-                                    "market_name": market_name,
+                                    "market_id": market_id,
+                                    "market_name": market_config.get('name', market_id),
                                     "detected_keyword": detected_keyword,
                                     "full_text": text
                                 }
                                 
                                 # Save detection to history and file
                                 self.detection_history.append(detection_info)
-                                with open(f"detections/{market_name}_{int(time.time())}.json", 'w') as f:
-                                    json.dump(detection_info, f, indent=2)
                                 
-                                speech_logger.info(f"Keyword detected for {market_name}: '{detected_keyword}'")
+                                # Save detection to file if configured
+                                if config.get_setting('speech', 'save_detections', True):
+                                    detections_dir = config.get_setting('paths', 'detections', 'detections')
+                                    with open(f"{detections_dir}/{market_id}_{int(time.time())}.json", 'w') as f:
+                                        json.dump(detection_info, f, indent=2)
+                                
+                                speech_logger.info(f"Keyword detected for {market_id}: '{detected_keyword}'")
                                 threading.Thread(
                                     target=self.place_trade,
-                                    args=(market_name, market_config, detected_keyword, time.time())
+                                    args=(market_id, market_config, detected_keyword, time.time())
                                 ).start()
             except queue.Empty:
                 speech_logger.debug("Audio queue timeout - continuing")
@@ -308,11 +329,13 @@ class MultiMarketTrader:
         
         try:
             process = self.get_audio_stream()
-            chunk_size = int(16000 * 1)  # 1 second chunks
+            chunk_size = int(config.get_setting('speech', 'sample_rate', 16000) * 
+                            config.get_setting('speech', 'chunk_size', 1))
             
             main_logger.info("Monitoring markets:")
-            for market_name, config in self.markets.items():
-                main_logger.info(f"- {market_name}: {config['keywords']}")
+            for market_id, market_config in self.markets.items():
+                keywords = market_config.get('keywords', [])
+                main_logger.info(f"- {market_id} ({market_config.get('name', '')}): {keywords}")
             
             # Start audio processing thread
             audio_thread = threading.Thread(target=self.process_audio, daemon=True)
@@ -324,7 +347,17 @@ class MultiMarketTrader:
                 audio_data = process.stdout.read(chunk_size)
                 if not audio_data:
                     main_logger.warning("Audio stream ended or returned no data")
-                    break
+                    
+                    # Auto restart if configured
+                    if config.get_setting('app', 'auto_restart', True):
+                        main_logger.info("Attempting to restart audio stream...")
+                        process.terminate()
+                        process.wait()
+                        process = self.get_audio_stream()
+                        continue
+                    else:
+                        break
+                        
                 self.audio_queue.put(audio_data)
                 
         except KeyboardInterrupt:
@@ -340,15 +373,31 @@ class MultiMarketTrader:
                 process.terminate()
                 process.wait()
 
-if __name__ == "__main__":
+def main():
+    """Main entry point with command line argument handling"""
+    parser = argparse.ArgumentParser(description='Polymarket trading based on YouTube speech recognition')
+    parser.add_argument('--url', type=str, help='YouTube URL to monitor')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    args = parser.parse_args()
+    
+    # Override debug setting if provided
+    if args.debug:
+        main_logger.setLevel(logging.DEBUG)
+        trade_logger.setLevel(logging.DEBUG)
+        speech_logger.setLevel(logging.DEBUG)
+        main_logger.debug("Debug mode enabled via command line")
+    
     main_logger.info("Starting application")
     
-    youtube_url = "https://www.youtube.com/watch?v=ZJR8YzV-Wgc"
-    main_logger.info(f"Using YouTube URL: {youtube_url}")
-    
     try:
-        trader = MultiMarketTrader(youtube_url)
+        trader = MultiMarketTrader(args.url)
         trader.start()
     except Exception as e:
         main_logger.critical(f"Fatal error: {str(e)}")
         main_logger.critical(traceback.format_exc())
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
