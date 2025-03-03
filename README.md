@@ -17,9 +17,11 @@ The project includes several components:
 
 - **Speech Recognition**: Uses the `vosk-model-small-en-us-0.15` model to detect keywords in audio streams
 - **Multi-Platform Support**: Can monitor YouTube videos, Twitter spaces, and radio streams
-- **Configurable Trading**: Define markets, trigger words, and trade parameters
+- **Configurable Trading**: Define markets, trigger words, and trade parameters via YAML configuration
 - **Real-Time Processing**: Low-latency detection and trade execution
 - **Wallet Management**: Utilities for wallet generation and blockchain interactions
+- **Comprehensive Logging**: Structured logging with rotating log files
+- **Error Handling**: Robust error handling with automatic retries
 
 ## Quick Start
 
@@ -28,22 +30,92 @@ The project includes several components:
 pip install -r requirements.txt
 ```
 
-2. Set up your wallet:
+2. Set up the configuration directories:
+```
+mkdir -p config/sources
+```
+
+3. Copy the YAML configuration files to their appropriate locations:
+   - `config/markets.yaml` - Market definitions
+   - `config/settings.yaml` - Global settings
+   - `config/sources/youtube.yaml` - YouTube-specific settings
+   - `config/sources/twitter.yaml` - Twitter-specific settings
+   - `config/sources/radio.yaml` - Radio-specific settings
+
+4. Set up your wallet:
    - Run `src/helpers/generate_wallet.py` to create a new wallet
    - Fund wallet with Matic and USDC.e on Polygon network
 
-3. Configure environment variables:
+5. Configure environment variables:
    - Copy `.env.example` to `.env`
    - Set required values (HOST, PK, etc.)
 
-4. Set trading parameters:
-   - Update market IDs and token IDs for the markets you want to trade
-   - Configure keywords, prices, and sizes in the relevant script
+6. Run one of the monitoring scripts:
+   - `python youtube.py` for YouTube streams
+   - `python twitter.py` for Twitter broadcasts
+   - `python radio_transcript.py` for radio streams
 
-5. Run one of the monitoring scripts:
-   - `youtube.py` for YouTube streams
-   - `twitter.py` for Twitter broadcasts
-   - `radio_transcript.py` for radio streams
+7. (Optional) Override default URL via command line:
+   - `python youtube.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID" --debug`
+
+## Configuration System
+
+The project uses a YAML-based configuration system that separates code from configuration:
+
+### Market Definitions (`config/markets.yaml`)
+
+Define markets to monitor and their associated parameters:
+
+```yaml
+crypto_market:
+  name: "Crypto/Bitcoin Mention"
+  token_id: "36604100954285610921025197770031955172882378..."
+  keywords:
+    - "crypto"
+    - "bitcoin"
+    - "cryptocurrency"
+  trigger_type: "any"
+  side: "BUY"
+  price: 0.9
+  size: 432
+  max_position: 1000
+  description: "Will Trump say crypto or Bitcoin during inauguration speech?"
+```
+
+### Global Settings (`config/settings.yaml`)
+
+Define global application behavior:
+
+```yaml
+trading:
+  prevent_duplicate_trades: true
+  max_daily_volume: 5000
+  
+speech:
+  chunk_size: 1
+  sample_rate: 16000
+  model_name: "vosk-model-small-en-us-0.15"
+  
+paths:
+  logs: "logs"
+  trades: "trades"
+  detections: "detections"
+```
+
+### Source-Specific Settings (`config/sources/youtube.yaml`)
+
+Configure settings specific to each audio source:
+
+```yaml
+default_url: "https://www.youtube.com/watch?v=ZJR8YzV-Wgc"
+ytdlp_options:
+  format: "bestaudio"
+  quiet: true
+audio:
+  codec: "pcm_s16le"
+  sample_rate: 16000
+  channels: 1
+```
 
 ## Speech Recognition System
 
@@ -58,36 +130,42 @@ The project uses Vosk for speech recognition with the `vosk-model-small-en-us-0.
 ## Architecture
 
 ```
-├── Poly_configuration/       # Core configuration and utilities
-│   ├── .env.example          # Template for environment variables
-│   ├── requirements.txt      # Project dependencies
-│   └── src/                  # Source code
-│       ├── api_keys/         # API key management
-│       ├── helpers/          # Helper utilities
-│       ├── markets/          # Market interaction
-│       └── trades/           # Trade execution
-├── clob_client.py            # CLOB client implementation
-├── market_data.ipynb         # Jupyter notebook for market analysis
-├── radio_transcript.py       # Radio stream monitoring
-├── trade_market.py           # Market trading example
-├── twitter.py                # Twitter stream monitoring
-└── youtube.py                # YouTube stream monitoring
+├── config/                 # Configuration files
+│   ├── markets.yaml        # Market definitions
+│   ├── settings.yaml       # Global application settings
+│   └── sources/            # Audio source configurations
+│       ├── youtube.yaml    # YouTube source settings
+│       ├── twitter.yaml    # Twitter source settings
+│       └── radio.yaml      # Radio source settings
+├── logs/                   # Logging directory
+│   ├── main.log            # Application logs
+│   ├── trades.log          # Trade execution logs
+│   └── speech.log          # Speech recognition logs
+├── trades/                 # Trade records (JSON)
+├── detections/             # Keyword detection records (JSON)
+├── src/                    # Source code
+│   ├── api_keys/           # API key management
+│   ├── helpers/            # Helper utilities
+│   ├── markets/            # Market interaction
+│   ├── trades/             # Trade execution
+│   └── utils/              # Utility functions
+│       └── config_loader.py # Configuration loading utility
+├── clob_client.py          # CLOB client implementation
+├── radio_transcript.py     # Radio stream monitoring
+├── trade_market.py         # Market trading example
+├── twitter.py              # Twitter stream monitoring
+└── youtube.py              # YouTube stream monitoring
 ```
 
-## Market Configuration
+## Logging System
 
-The system can be configured to monitor for specific keywords and execute trades on corresponding markets. Example configuration:
+The application includes a comprehensive logging system:
 
-```python
-'crypto_market': {
-    'token_id': '12345...',
-    'keywords': ['crypto', 'bitcoin', 'cryptocurrency'],
-    'trigger_type': 'any',
-    'side': 'BUY',
-    'price': 0.9,
-    'size': 432
-}
-```
+- **Main Logs**: General application events and startup/shutdown information
+- **Trade Logs**: Detailed records of trade executions and failures
+- **Speech Logs**: Transcripts of detected speech and keyword matches
+
+Log files are automatically rotated to avoid filling up disk space, and logs include detailed information for troubleshooting.
 
 ## Requirements
 - Python 3.9+
